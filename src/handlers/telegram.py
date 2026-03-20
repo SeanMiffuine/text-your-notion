@@ -1,10 +1,10 @@
 """
 Telegram message handler for processing user messages.
 """
-from src.services.ai_parser import parse_message
-from src.services.calendar import GoogleCalendarClient
-from src.services.notion import NotionClient
-from src.utils.datetime_utils import (
+from services.ai_parser import parse_message
+from services.calendar import GoogleCalendarClient
+from services.notion import NotionClient
+from utils.datetime_utils import (
     get_current_time,
     format_date_friendly,
     format_time_friendly
@@ -50,7 +50,12 @@ async def handle_message(env, chat_id, message_text):
                 return "⚠️ I need a specific time to create a calendar event. Try: 'Meeting tomorrow at 2pm'"
             
             # Initialize Google Calendar client
-            calendar_client = GoogleCalendarClient(env.GOOGLE_CALENDAR_OAUTH_TOKEN)
+            calendar_client = GoogleCalendarClient(
+                access_token=env.GOOGLE_CALENDAR_ACCESS_TOKEN,
+                refresh_token=env.GOOGLE_CALENDAR_REFRESH_TOKEN,
+                client_id=env.GOOGLE_CALENDAR_CLIENT_ID,
+                client_secret=env.GOOGLE_CALENDAR_CLIENT_SECRET
+            )
             
             # Create event
             event = await calendar_client.create_event(

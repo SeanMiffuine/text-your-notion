@@ -57,8 +57,10 @@ Think of it like: **Your computer = development**, **Cloudflare = production**
 # Install uv (Python package manager)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install pywrangler (Cloudflare Workers CLI for Python)
-npm install -g pywrangler
+# Install wrangler (Cloudflare Workers CLI)
+npm install -g wrangler
+
+# Note: pywrangler is run via 'uv run pywrangler' (no separate install needed)
 ```
 
 ### 2. Clone and Configure (on your local machine)
@@ -68,9 +70,17 @@ npm install -g pywrangler
 git clone <your-repo-url>
 cd text-your-notion
 
-# Copy environment template
-cp .env.example .env
+# Create local secrets file
+cp .dev.vars.example .dev.vars
+
+# Edit .dev.vars and add your actual tokens
+# This file is for LOCAL TESTING ONLY and is git-ignored
 ```
+
+**Important:** 
+- `.dev.vars` is for local development (testing with `uv run pywrangler dev`)
+- For production deployment, you still need to use `wrangler secret put` commands
+- Never commit `.dev.vars` to git (it's already in `.gitignore`)
 
 ### 3. Set Up Telegram Bot
 
@@ -82,13 +92,48 @@ cp .env.example .env
    - Visit: `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates`
    - Find your `chat.id` in the response
 
+**Privacy:** The bot will ONLY respond to messages from your chat ID. Anyone else who tries to message the bot will be silently ignored.
+
 ### 4. Set Up Google Calendar API
 
+**Step 1: Create Google Cloud Project**
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project
-3. Enable Google Calendar API
-4. Create OAuth 2.0 credentials
-5. Generate access token (or use service account)
+2. Create new project: "Notion Assistant Bot"
+3. Enable **Google Calendar API** (APIs & Services → Library)
+
+**Step 2: Create OAuth 2.0 Credentials**
+1. Go to **APIs & Services** → **Credentials**
+2. Click **Create Credentials** → **OAuth client ID**
+3. Configure OAuth consent screen (if needed):
+   - User Type: External
+   - Add scope: `https://www.googleapis.com/auth/calendar`
+   - Add your email as test user
+4. Create OAuth client ID:
+   - Application type: **Desktop app**
+   - Download the JSON file as `client_secret.json`
+
+**Step 3: Get Your Access Token**
+
+Run the helper script to authorize your bot:
+
+```bash
+# Install dependencies
+cd scripts
+pip install -r requirements.txt
+
+# Place your client_secret.json in the scripts folder
+# Then run:
+python get_google_token.py
+```
+
+This will:
+- Open your browser for Google authorization
+- Generate an access token
+- Save it for future use
+
+Copy the **Access Token** to your `.dev.vars` file.
+
+**Note:** Access tokens expire after ~1 hour. For production, you'll want to implement refresh token logic, but for testing, you can regenerate the token as needed.
 
 ### 5. Set Up Notion
 
@@ -104,17 +149,43 @@ cp .env.example .env
 
 ### 6. Configure Secrets (on your local machine)
 
-These commands upload your secrets to Cloudflare Workers securely:
+**Two ways to handle secrets:**
+
+**A. For Local Development (testing):**
+Edit `.dev.vars` file with your actual tokens:
+```bash
+# Edit the file
+nano .dev.vars
+
+# Or use any text editor
+# Add your real tokens to .dev.vars
+```
+
+This file is used when you run `uv run pywrangler dev` locally.
+
+**B. For Production Deployment (required):**
+Upload secrets to Cloudflare Workers securely:
 
 ```bash
-# Set environment variables in Cloudflare Workers
-# You'll be prompted to enter each value
+# Telegram
 wrangler secret put TELEGRAM_BOT_TOKEN
 wrangler secret put TELEGRAM_CHAT_ID
-wrangler secret put GOOGLE_CALENDAR_OAUTH_TOKEN
+
+# Google Calendar (all 4 values from get_google_token.py)
+wrangler secret put GOOGLE_CALENDAR_ACCESS_TOKEN
+wrangler secret put GOOGLE_CALENDAR_REFRESH_TOKEN
+wrangler secret put GOOGLE_CALENDAR_CLIENT_ID
+wrangler secret put GOOGLE_CALENDAR_CLIENT_SECRET
+
+# Notion
 wrangler secret put NOTION_API_KEY
 wrangler secret put NOTION_DATABASE_ID
 ```
+
+**Important:** 
+- `.dev.vars` = Local testing only (git-ignored, never committed)
+- `wrangler secret put` = Production deployment (stored securely in Cloudflare)
+- You need BOTH for a complete setup
 
 ### 7. Deploy (on your local machine)
 
@@ -122,7 +193,7 @@ This uploads your code to Cloudflare's cloud:
 
 ```bash
 # Deploy to Cloudflare Workers
-pywrangler deploy
+uv run pywrangler deploy
 ```
 
 After deployment, your bot runs on Cloudflare's edge network automatically!
@@ -198,9 +269,9 @@ text-your-notion/
 
 ```bash
 # Run locally
-pywrangler dev
+uv run pywrangler dev
 
-# Test webhook with curl
+# Test webhook with curl (in another terminal)
 curl -X POST http://localhost:8787 \
   -H "Content-Type: application/json" \
   -d '{

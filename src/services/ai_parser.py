@@ -4,6 +4,7 @@ Extracts event/todo details from natural language messages.
 """
 from datetime import datetime
 import json
+import re
 
 
 # JSON Schema for event/todo extraction
@@ -85,7 +86,7 @@ Examples:
 
 async def parse_message(ai_binding, message_text, current_datetime):
     """
-    Parse natural language message using Workers AI with JSON Schema.
+    Parse natural language message using Workers AI.
     
     Args:
         ai_binding: Cloudflare Workers AI binding (env.AI)
@@ -99,38 +100,63 @@ async def parse_message(ai_binding, message_text, current_datetime):
         Exception: If AI parsing fails
     """
     try:
-        # Prepare AI request with JSON Schema
-        ai_request = {
-            "messages": [
-                {
-                    "role": "system",
-                    "content": get_system_prompt(current_datetime)
-                },
-                {
-                    "role": "user",
-                    "content": message_text
-                }
-            ],
-            "response_format": EXTRACTION_SCHEMA
-        }
+        # Build the prompt
+        prompt = f"""{get_system_prompt(current_datetime)}
+
+User message: {message_text}
+
+Extract the following information and respond ONLY with valid JSON (no other text):
+{{
+  "item_type": "event or todo",
+  "title": "event/todo title",
+  "date": "YYYY-MM-DD",
+  "time": "HH:MM or null",
+  "duration_minutes": 60,
+  "location": "location or null",
+  "description": "description or null"
+}}"""
         
-        # Call Workers AI
+        # Call Workers AI - try with prompt parameter
         response = await ai_binding.run(
-            "@cf/meta/llama-3.1-8b-instruct-fast",
-            ai_request
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",  # Upgraded to 70B model
+            prompt=prompt
         )
         
-        # Extract response
-        if hasattr(response, 'response'):
-            result = response.response
-        elif isinstance(response, dict) and 'response' in response:
-            result = response['response']
+        # Parse response
+        result_text = None
+        
+        # Try different response formats
+        if isinstance(response, dict):
+            if 'response' in response:
+                result_text = response['response']
+            elif 'result' in response:
+                result_text = response['result']
+            elif 'text' in response:
+                result_text = response['text']
+            else:
+                result_text = str(response)
+        elif hasattr(response, 'response'):
+            result_text = response.response
+        elif hasattr(response, 'result'):
+            result_text = response.result
         else:
-            result = response
+            result_text = str(response)
+        
+        print(f"AI raw response: {result_text}")
+        
+        # Extract JSON from response (might have extra text)
+        if isinstance(result_text, str):
+            # Try to find JSON in the response
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                result_text = json_match.group(0)
+            result = json.loads(result_text)
+        else:
+            result = result_text
         
         # Validate required fields
         if not isinstance(result, dict):
-            raise ValueError(f"Expected dict, got {type(result)}")
+            raise ValueError(f"Expected dict, got {type(result)}: {result}")
         
         if 'item_type' not in result or 'title' not in result or 'date' not in result:
             raise ValueError(f"Missing required fields in response: {result}")
@@ -145,3 +171,5 @@ async def parse_message(ai_binding, message_text, current_datetime):
     except Exception as e:
         print(f"AI parsing error: {e}")
         raise Exception(f"I couldn't understand that. Can you rephrase? (Error: {str(e)})")
+
+

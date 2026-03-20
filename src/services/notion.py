@@ -2,7 +2,7 @@
 Notion API client for creating and querying todo items.
 """
 import httpx
-from src.utils.datetime_utils import get_date_range_today, get_date_range_this_week
+from utils.datetime_utils import get_date_range_today, get_date_range_this_week
 
 
 class NotionClient:
@@ -87,7 +87,7 @@ class NotionClient:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.BASE_URL}/pages",
-                    headers=self.headers,
+                    headers={**self.headers, "Accept-Encoding": "identity"},  # Disable compression
                     json=page,
                     timeout=30.0
                 )
@@ -165,7 +165,7 @@ class NotionClient:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.BASE_URL}/databases/{self.database_id}/query",
-                    headers=self.headers,
+                    headers={**self.headers, "Accept-Encoding": "identity"},  # Disable compression
                     json=query,
                     timeout=30.0
                 )

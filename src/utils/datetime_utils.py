@@ -2,11 +2,38 @@
 Datetime utilities for Vancouver timezone (America/Vancouver).
 Handles PST/PDT conversions and date/time formatting.
 """
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta, timezone
 
 
-VANCOUVER_TZ = ZoneInfo("America/Vancouver")
+# Vancouver timezone offset (PST is UTC-8, PDT is UTC-7)
+# We'll use a simple approach since zoneinfo isn't available in Workers
+PST_OFFSET = timezone(timedelta(hours=-8))
+PDT_OFFSET = timezone(timedelta(hours=-7))
+
+
+def _get_vancouver_offset():
+    """
+    Determine if we're in PST or PDT based on daylight saving rules.
+    DST in North America: Second Sunday in March to First Sunday in November
+    """
+    now_utc = datetime.now(timezone.utc)
+    year = now_utc.year
+    
+    # Calculate DST start (second Sunday in March)
+    march_first = datetime(year, 3, 1, 2, 0, 0, tzinfo=timezone.utc)
+    days_to_sunday = (6 - march_first.weekday()) % 7
+    dst_start = march_first + timedelta(days=days_to_sunday + 7)
+    
+    # Calculate DST end (first Sunday in November)
+    nov_first = datetime(year, 11, 1, 2, 0, 0, tzinfo=timezone.utc)
+    days_to_sunday = (6 - nov_first.weekday()) % 7
+    dst_end = nov_first + timedelta(days=days_to_sunday)
+    
+    # Check if we're in DST period
+    if dst_start <= now_utc < dst_end:
+        return PDT_OFFSET  # UTC-7
+    else:
+        return PST_OFFSET  # UTC-8
 
 
 def get_current_time():
@@ -16,7 +43,9 @@ def get_current_time():
     Returns:
         datetime: Current time in America/Vancouver timezone
     """
-    return datetime.now(VANCOUVER_TZ)
+    utc_now = datetime.now(timezone.utc)
+    vancouver_offset = _get_vancouver_offset()
+    return utc_now.astimezone(vancouver_offset)
 
 
 def parse_date_string(date_str):
@@ -61,7 +90,8 @@ def combine_datetime(date_str, time_str):
     
     # Combine and localize to Vancouver timezone
     dt = datetime.combine(date_obj, time_obj)
-    return dt.replace(tzinfo=VANCOUVER_TZ)
+    vancouver_offset = _get_vancouver_offset()
+    return dt.replace(tzinfo=vancouver_offset)
 
 
 def format_datetime_for_google(dt):

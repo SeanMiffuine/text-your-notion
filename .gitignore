@@ -2,6 +2,12 @@
 .env
 .dev.vars
 
+# Secrets and credentials
+client_secret.json
+token.pickle
+scripts/client_secret.json
+scripts/token.pickle
+
 # Python
 __pycache__/
 *.py[cod]
@@ -12,6 +18,7 @@ __pycache__/
 # Cloudflare Workers
 .wrangler/
 worker/
+python_modules/
 
 # IDE
 .vscode/

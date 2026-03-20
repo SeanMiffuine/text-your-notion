@@ -1,0 +1,13 @@
+# Telegram Bot Configuration
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_CHAT_ID=your_telegram_chat_id_here
+
+# Google Calendar OAuth (get these from scripts/get_google_token.py)
+GOOGLE_CALENDAR_ACCESS_TOKEN=your_access_token_here
+GOOGLE_CALENDAR_REFRESH_TOKEN=your_refresh_token_here
+GOOGLE_CALENDAR_CLIENT_ID=your_client_id_here
+GOOGLE_CALENDAR_CLIENT_SECRET=your_client_secret_here
+
+# Notion API
+NOTION_API_KEY=your_notion_integration_token_here
+NOTION_DATABASE_ID=your_notion_database_id_here

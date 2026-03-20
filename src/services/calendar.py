@@ -1,8 +1,11 @@
 """
 Google Calendar API client for creating and querying events.
+Handles OAuth token refresh automatically.
 """
 import httpx
-from src.utils.datetime_utils import (
+import json
+from datetime import datetime, timedelta
+from utils.datetime_utils import (
     combine_datetime,
     add_minutes,
     format_datetime_for_google,
@@ -12,22 +15,73 @@ from src.utils.datetime_utils import (
 
 
 class GoogleCalendarClient:
-    """Client for Google Calendar API operations."""
+    """Client for Google Calendar API operations with automatic token refresh."""
     
     BASE_URL = "https://www.googleapis.com/calendar/v3"
+    TOKEN_URL = "https://oauth2.googleapis.com/token"
     
-    def __init__(self, oauth_token):
+    def __init__(self, access_token, refresh_token=None, client_id=None, client_secret=None):
         """
         Initialize Google Calendar client.
         
         Args:
-            oauth_token: Google OAuth 2.0 access token
+            access_token: Google OAuth 2.0 access token
+            refresh_token: Refresh token for automatic token renewal (optional)
+            client_id: OAuth client ID (required if using refresh token)
+            client_secret: OAuth client secret (required if using refresh token)
         """
-        self.oauth_token = oauth_token
-        self.headers = {
-            "Authorization": f"Bearer {oauth_token}",
+        self.access_token = access_token
+        self.refresh_token = refresh_token
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.token_expiry = None
+    
+    async def _get_headers(self):
+        """Get authorization headers, refreshing token if needed."""
+        # If we have refresh capability and token might be expired, refresh it
+        if self.refresh_token and self.client_id and self.client_secret:
+            # Try to refresh if we don't have an expiry or if it's close to expiring
+            if self.token_expiry is None or datetime.now() >= self.token_expiry - timedelta(minutes=5):
+                await self._refresh_access_token()
+        
+        return {
+            "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json"
         }
+    
+    async def _refresh_access_token(self):
+        """Refresh the access token using the refresh token."""
+        try:
+            print("Refreshing Google Calendar access token...")
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self.TOKEN_URL,
+                    data={
+                        "client_id": self.client_id,
+                        "client_secret": self.client_secret,
+                        "refresh_token": self.refresh_token,
+                        "grant_type": "refresh_token"
+                    },
+                    headers={"Accept-Encoding": "identity"},  # Disable compression
+                    timeout=30.0
+                )
+                
+                if response.status_code != 200:
+                    raise Exception(f"Token refresh failed: {response.status_code} - {response.text}")
+                
+                data = response.json()
+                self.access_token = data["access_token"]
+                
+                # Set expiry time (tokens typically last 1 hour)
+                expires_in = data.get("expires_in", 3600)
+                self.token_expiry = datetime.now() + timedelta(seconds=expires_in)
+                
+                print(f"✅ Token refreshed successfully. Expires in {expires_in} seconds.")
+                
+        except Exception as e:
+            print(f"Error refreshing token: {e}")
+            # Continue with existing token and hope it works
     
     async def create_event(self, title, date_str, time_str, duration_minutes=60, 
                           location=None, description=None):
@@ -79,11 +133,15 @@ class GoogleCalendarClient:
             if description:
                 event["description"] = description
             
+            # Get headers (with token refresh if needed)
+            headers = await self._get_headers()
+            headers["Accept-Encoding"] = "identity"  # Disable compression
+            
             # Create event via API
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.BASE_URL}/calendars/primary/events",
-                    headers=self.headers,
+                    headers=headers,
                     json=event,
                     timeout=30.0
                 )
@@ -136,10 +194,14 @@ class GoogleCalendarClient:
                 "orderBy": "startTime"
             }
             
+            # Get headers (with token refresh if needed)
+            headers = await self._get_headers()
+            headers["Accept-Encoding"] = "identity"  # Disable compression
+            
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"{self.BASE_URL}/calendars/primary/events",
-                    headers=self.headers,
+                    headers=headers,
                     params=params,
                     timeout=30.0
                 )
@@ -153,3 +215,4 @@ class GoogleCalendarClient:
         except Exception as e:
             print(f"Error fetching calendar events: {e}")
             return []
+

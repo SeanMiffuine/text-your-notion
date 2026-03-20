@@ -1,9 +1,9 @@
 """
 Morning briefing handler for generating daily summaries.
 """
-from src.services.calendar import GoogleCalendarClient
-from src.services.notion import NotionClient
-from src.utils.datetime_utils import get_current_time
+from services.calendar import GoogleCalendarClient
+from services.notion import NotionClient
+from utils.datetime_utils import get_current_time
 
 
 async def generate_briefing(env):
@@ -18,7 +18,12 @@ async def generate_briefing(env):
     """
     try:
         # Initialize clients
-        calendar_client = GoogleCalendarClient(env.GOOGLE_CALENDAR_OAUTH_TOKEN)
+        calendar_client = GoogleCalendarClient(
+            access_token=env.GOOGLE_CALENDAR_ACCESS_TOKEN,
+            refresh_token=env.GOOGLE_CALENDAR_REFRESH_TOKEN,
+            client_id=env.GOOGLE_CALENDAR_CLIENT_ID,
+            client_secret=env.GOOGLE_CALENDAR_CLIENT_SECRET
+        )
         notion_client = NotionClient(env.NOTION_API_KEY, env.NOTION_DATABASE_ID)
         
         # Fetch data

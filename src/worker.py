@@ -4,8 +4,8 @@ Handles Telegram webhooks and scheduled morning briefings.
 """
 from js import Response
 import json
-from src.handlers.telegram import handle_message
-from src.handlers.briefing import generate_briefing
+from handlers.telegram import handle_message
+from handlers.briefing import generate_briefing
 
 
 class NotionAssistantBot:
@@ -33,7 +33,8 @@ class NotionAssistantBot:
                 )
             
             # Parse Telegram webhook payload
-            data = await request.json()
+            body_text = await request.text()
+            data = json.loads(body_text)
             
             # Check if this is a message update
             if "message" not in data:
@@ -44,6 +45,12 @@ class NotionAssistantBot:
             # Extract message details
             chat_id = message["chat"]["id"]
             text = message.get("text", "")
+            
+            # Security: Only respond to authorized chat ID
+            authorized_chat_id = int(self.env.TELEGRAM_CHAT_ID)
+            if chat_id != authorized_chat_id:
+                print(f"Unauthorized access attempt from chat_id: {chat_id}")
+                return Response.json({"ok": True}, status=200)
             
             # Ignore empty messages
             if not text:
