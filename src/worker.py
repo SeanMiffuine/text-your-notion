@@ -77,10 +77,8 @@ class NotionAssistantBot:
             except:
                 pass
             
-            return Response.json(
-                {"error": str(e)},
-                status=500
-            )
+            # CRITICAL: Always return 200 to Telegram to prevent retries
+            return Response.json({"ok": True}, status=200)
     
     async def scheduled(self, event):
         """
@@ -115,14 +113,19 @@ class NotionAssistantBot:
         url = f"https://api.telegram.org/bot{self.env.TELEGRAM_BOT_TOKEN}/sendMessage"
         
         async with httpx.AsyncClient() as client:
-            await client.post(
+            response = await client.post(
                 url,
                 json={
                     "chat_id": chat_id,
                     "text": text,
                     "parse_mode": "Markdown"
-                }
+                },
+                headers={"Accept-Encoding": "identity"},  # Disable compression
+                timeout=30.0
             )
+            
+            if response.status_code != 200:
+                print(f"Telegram API error: {response.status_code} - {response.text}")
 
 
 # Worker entrypoint
