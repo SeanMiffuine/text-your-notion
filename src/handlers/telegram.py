@@ -45,16 +45,18 @@ async def handle_message(env, chat_id, message_text):
             duration = parsed_data.get('duration_minutes', 60)
             location = parsed_data.get('location')
             description = parsed_data.get('description')
+            category = parsed_data.get('category')
             
             if not time_str:
-                return "⚠️ I need a specific time to create a calendar event. Try: 'Meeting tomorrow at 2pm'"
+                return "I need a specific time to create a calendar event.'"
             
             # Initialize Google Calendar client
             calendar_client = GoogleCalendarClient(
                 access_token=env.GOOGLE_CALENDAR_ACCESS_TOKEN,
                 refresh_token=env.GOOGLE_CALENDAR_REFRESH_TOKEN,
                 client_id=env.GOOGLE_CALENDAR_CLIENT_ID,
-                client_secret=env.GOOGLE_CALENDAR_CLIENT_SECRET
+                client_secret=env.GOOGLE_CALENDAR_CLIENT_SECRET,
+                env=env
             )
             
             # Create event
@@ -64,17 +66,22 @@ async def handle_message(env, chat_id, message_text):
                 time_str=time_str,
                 duration_minutes=duration,
                 location=location,
-                description=description
+                description=description,
+                category=category
             )
             
             # Format confirmation message
             date_friendly = format_date_friendly(date_str)
-            time_friendly = format_time_friendly(time_str)
             
-            response = f"✅ **Event created!**\n\n"
+            # Calculate end time for time range display
+            from datetime import datetime, timedelta
+            start_time = datetime.strptime(time_str, "%H:%M")
+            end_time = start_time + timedelta(minutes=duration)
+            time_range = f"{start_time.strftime('%I:%M %p').lstrip('0')}-{end_time.strftime('%I:%M %p').lstrip('0')}"
+            
+            response = f"✅ Event created!\n\n"
             response += f"📅 {title}\n"
-            response += f"🕐 {date_friendly} at {time_friendly}\n"
-            response += f"⏱️ Duration: {duration} minutes\n"
+            response += f"🕐 {date_friendly} at {time_range}\n"
             
             if location:
                 response += f"📍 {location}\n"
@@ -104,7 +111,7 @@ async def handle_message(env, chat_id, message_text):
             # Format confirmation message
             date_friendly = format_date_friendly(date_str)
             
-            response = f"✅ **Todo created!**\n\n"
+            response = f"✅ Todo created!\n\n"
             response += f"☑️ {title}\n"
             response += f"📅 Due: {date_friendly}\n"
             
@@ -117,4 +124,4 @@ async def handle_message(env, chat_id, message_text):
         # Return error message
         error_msg = str(e)
         print(f"Error handling message: {error_msg}")
-        return f"❌ {error_msg}"
+        return "❌ Couldn't parse that. Please rephrase."

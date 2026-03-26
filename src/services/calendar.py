@@ -20,7 +20,19 @@ class GoogleCalendarClient:
     BASE_URL = "https://www.googleapis.com/calendar/v3"
     TOKEN_URL = "https://oauth2.googleapis.com/token"
     
-    def __init__(self, access_token, refresh_token=None, client_id=None, client_secret=None):
+    # Calendar category to calendar ID mapping
+    # Note: These calendar IDs need to be configured in your environment variables
+    CATEGORY_CALENDARS = {
+        "Academic": "GOOGLE_CALENDAR_ID_ACADEMIC",
+        "Birthdays": "GOOGLE_CALENDAR_ID_BIRTHDAYS",
+        "Errands": "GOOGLE_CALENDAR_ID_ERRANDS",
+        "Events": "GOOGLE_CALENDAR_ID_EVENTS",
+        "Finance": "GOOGLE_CALENDAR_ID_FINANCE",
+        "Occupation": "GOOGLE_CALENDAR_ID_OCCUPATION",
+        "Passion": "GOOGLE_CALENDAR_ID_PASSION"
+    }
+    
+    def __init__(self, access_token, refresh_token=None, client_id=None, client_secret=None, env=None):
         """
         Initialize Google Calendar client.
         
@@ -29,12 +41,14 @@ class GoogleCalendarClient:
             refresh_token: Refresh token for automatic token renewal (optional)
             client_id: OAuth client ID (required if using refresh token)
             client_secret: OAuth client secret (required if using refresh token)
+            env: Environment object containing calendar IDs (optional)
         """
         self.access_token = access_token
         self.refresh_token = refresh_token
         self.client_id = client_id
         self.client_secret = client_secret
         self.token_expiry = None
+        self.env = env
     
     async def _get_headers(self):
         """Get authorization headers, refreshing token if needed."""
@@ -84,7 +98,7 @@ class GoogleCalendarClient:
             # Continue with existing token and hope it works
     
     async def create_event(self, title, date_str, time_str, duration_minutes=60, 
-                          location=None, description=None):
+                          location=None, description=None, category=None):
         """
         Create a calendar event.
         
@@ -95,6 +109,7 @@ class GoogleCalendarClient:
             duration_minutes: Event duration in minutes (default: 60)
             location: Event location (optional)
             description: Event description (optional)
+            category: Calendar category (Academic/Birthdays/Errands/Events/Finance/Occupation/Passion)
             
         Returns:
             dict: Created event data from Google Calendar
@@ -106,6 +121,13 @@ class GoogleCalendarClient:
             # Combine date and time
             start_dt = combine_datetime(date_str, time_str)
             end_dt = add_minutes(start_dt, duration_minutes)
+            
+            # Determine which calendar to use
+            calendar_id = "primary"
+            if category and self.env:
+                env_var_name = self.CATEGORY_CALENDARS.get(category)
+                if env_var_name and hasattr(self.env, env_var_name):
+                    calendar_id = getattr(self.env, env_var_name)
             
             # Build event object
             event = {
@@ -140,7 +162,7 @@ class GoogleCalendarClient:
             # Create event via API
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.BASE_URL}/calendars/primary/events",
+                    f"{self.BASE_URL}/calendars/{calendar_id}/events",
                     headers=headers,
                     json=event,
                     timeout=30.0

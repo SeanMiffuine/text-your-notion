@@ -8,6 +8,17 @@ GOOGLE_CALENDAR_REFRESH_TOKEN=your_refresh_token_here
 GOOGLE_CALENDAR_CLIENT_ID=your_client_id_here
 GOOGLE_CALENDAR_CLIENT_SECRET=your_client_secret_here
 
+# Google Calendar IDs for different categories (optional - defaults to primary if not set)
+# To find calendar IDs: Go to Google Calendar settings > Select calendar > Calendar ID
+GOOGLE_CALENDAR_ID_ACADEMIC=your_academic_calendar_id@group.calendar.google.com
+GOOGLE_CALENDAR_ID_BIRTHDAYS=your_birthdays_calendar_id@group.calendar.google.com
+GOOGLE_CALENDAR_ID_ERRANDS=your_errands_calendar_id@group.calendar.google.com
+GOOGLE_CALENDAR_ID_EVENTS=your_events_calendar_id@group.calendar.google.com
+GOOGLE_CALENDAR_ID_FINANCE=your_finance_calendar_id@group.calendar.google.com
+GOOGLE_CALENDAR_ID_OCCUPATION=your_occupation_calendar_id@group.calendar.google.com
+GOOGLE_CALENDAR_ID_PASSION=your_passion_calendar_id@group.calendar.google.com
+
+
 # Notion API
 NOTION_API_KEY=your_notion_integration_token_here
 NOTION_DATABASE_ID=your_notion_database_id_here

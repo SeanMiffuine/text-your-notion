@@ -4,47 +4,56 @@ Extracts event/todo details from natural language messages.
 """
 from datetime import datetime
 import json
-import re
+from js import Object
+from pyodide.ffi import to_js as _to_js
+
+
+# Helper to convert Python dicts to JavaScript objects
+def to_js(obj):
+    return _to_js(obj, dict_converter=Object.fromEntries)
 
 
 # JSON Schema for event/todo extraction
+# Simplified to avoid nullable type arrays which can confuse the model
 EXTRACTION_SCHEMA = {
-    "type": "json_schema",
-    "json_schema": {
-        "type": "object",
-        "properties": {
-            "item_type": {
-                "type": "string",
-                "enum": ["event", "todo"],
-                "description": "event if specific time mentioned, todo otherwise"
-            },
-            "title": {
-                "type": "string",
-                "description": "Short title/summary of the event or todo"
-            },
-            "date": {
-                "type": "string",
-                "description": "Date in YYYY-MM-DD format"
-            },
-            "time": {
-                "type": ["string", "null"],
-                "description": "Time in HH:MM format (24-hour), null if not specified"
-            },
-            "duration_minutes": {
-                "type": ["number", "null"],
-                "description": "Duration in minutes, default 60 for events"
-            },
-            "location": {
-                "type": ["string", "null"],
-                "description": "Location if mentioned"
-            },
-            "description": {
-                "type": ["string", "null"],
-                "description": "Additional context or notes"
-            }
+    "type": "object",
+    "properties": {
+        "item_type": {
+            "type": "string",
+            "enum": ["event", "todo"],
+            "description": "event if specific time mentioned, todo otherwise"
         },
-        "required": ["item_type", "title", "date"]
-    }
+        "title": {
+            "type": "string",
+            "description": "Short title/summary of the event or todo"
+        },
+        "date": {
+            "type": "string",
+            "description": "Date in YYYY-MM-DD format"
+        },
+        "time": {
+            "type": "string",
+            "description": "Time in HH:MM format (24-hour), empty string if not specified"
+        },
+        "duration_minutes": {
+            "type": "number",
+            "description": "Duration in minutes, default 60 for events"
+        },
+        "location": {
+            "type": "string",
+            "description": "Location if mentioned, empty string otherwise"
+        },
+        "description": {
+            "type": "string",
+            "description": "Additional context or notes, empty string if none"
+        },
+        "category": {
+            "type": "string",
+            "enum": ["Academic", "Birthdays", "Errands", "Events", "Finance", "Occupation", "Passion"],
+            "description": "Calendar category based on event type, defaults to Events"
+        }
+    },
+    "required": ["item_type", "title", "date", "time", "duration_minutes", "location", "description", "category"]
 }
 
 
@@ -71,16 +80,30 @@ Rules:
   - "today" → {current_datetime.strftime('%Y-%m-%d')}
   - "tomorrow" → calculate next day
   - "Friday", "next Monday" → calculate actual date
-- Time format: 24-hour HH:MM (e.g., "14:00" for 2pm)
+- Time format: 24-hour HH:MM (e.g., "14:00" for 2pm), use empty string if no time
 - Default duration: 60 minutes for events
-- Extract location if mentioned (e.g., "at the office", "in room 5")
+- Extract location if mentioned, use empty string if not mentioned
 - Keep title concise and clear
-- Add any additional context to description
+- Description field: ONLY use for explicit notes, reminders, or special instructions the user mentions. If the user just describes what the event is, put that in the title. Use empty string if no description.
+- Category: Choose the most appropriate calendar category:
+  - Academic: Classes, lectures, study sessions, exams, school-related
+  - Birthdays: Birthday celebrations and anniversaries
+  - Errands: Shopping, chores, appointments (dentist, haircut, etc.)
+  - Events: Social events, dinners, parties, meetups, entertainment
+  - Finance: Bill payments, financial meetings, budget reviews
+  - Occupation: Work meetings, deadlines, work tasks, professional activities
+  - Passion: Hobbies, personal projects, art, music, sports, creative activities
+  - Default to "Events" if unclear or doesn't fit other categories
 
 Examples:
-- "Meeting with Sarah Friday 2pm" → event, date: next Friday, time: "14:00"
-- "Buy groceries tomorrow" → todo, date: tomorrow, time: null
-- "Dentist appointment next Tuesday 10am for 30 minutes" → event, duration: 30
+- "Meeting with Sarah Friday 2pm" → event, date: next Friday, time: "14:00", description: "", category: "Events"
+- "Buy groceries tomorrow" → todo, date: tomorrow, time: "", description: "", category: "Errands"
+- "Dentist appointment next Tuesday 10am for 30 minutes" → event, duration: 30, description: "", category: "Errands"
+- "Dinner with John at 7pm, remind me to bring the documents" → event, time: "19:00", description: "Bring the documents", category: "Events"
+- "Block off 6pm till end of day for dinner and drinks with Rikochan" → event, title: "Dinner and drinks with Rikochan", description: "", category: "Events"
+- "Art practice tomorrow at 3pm" → event, time: "15:00", category: "Passion"
+- "Team standup Monday 9am" → event, time: "09:00", category: "Occupation"
+- "Pay rent on the 1st" → todo, category: "Finance"
 """
 
 
@@ -100,59 +123,59 @@ async def parse_message(ai_binding, message_text, current_datetime):
         Exception: If AI parsing fails
     """
     try:
-        # Build the prompt
-        prompt = f"""{get_system_prompt(current_datetime)}
-
-User message: {message_text}
-
-Extract the following information and respond ONLY with valid JSON (no other text):
-{{
-  "item_type": "event or todo",
-  "title": "event/todo title",
-  "date": "YYYY-MM-DD",
-  "time": "HH:MM or null",
-  "duration_minutes": 60,
-  "location": "location or null",
-  "description": "description or null"
-}}"""
+        # Build the system prompt
+        system_prompt = get_system_prompt(current_datetime)
         
-        # Call Workers AI - try with prompt parameter
+        # Build request payload matching the docs example exactly
+        request_payload = {
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message_text}
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": EXTRACTION_SCHEMA
+            }
+        }
+        
+        print(f"Request payload: {json.dumps(request_payload, indent=2)}")
+        
+        # Convert to JavaScript object for the binding
+        js_payload = to_js(request_payload)
+        
+        # Call Workers AI with JSON schema mode
         response = await ai_binding.run(
-            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",  # Upgraded to 70B model
-            prompt=prompt
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+            js_payload
         )
         
         # Parse response
-        result_text = None
+        result = None
         
-        # Try different response formats
-        if isinstance(response, dict):
+        # Handle JsProxy objects from Python Workers FFI
+        if hasattr(response, 'response'):
+            result = response.response
+        elif isinstance(response, dict):
             if 'response' in response:
-                result_text = response['response']
+                result = response['response']
             elif 'result' in response:
-                result_text = response['result']
+                result = response['result']
             elif 'text' in response:
-                result_text = response['text']
+                result = response['text']
             else:
-                result_text = str(response)
-        elif hasattr(response, 'response'):
-            result_text = response.response
-        elif hasattr(response, 'result'):
-            result_text = response.result
+                result = response
         else:
-            result_text = str(response)
+            result = response
         
-        print(f"AI raw response: {result_text}")
+        # Convert JsProxy to Python dict using the built-in to_py() method
+        if hasattr(result, 'to_py'):
+            result = result.to_py()
         
-        # Extract JSON from response (might have extra text)
-        if isinstance(result_text, str):
-            # Try to find JSON in the response
-            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-            if json_match:
-                result_text = json_match.group(0)
-            result = json.loads(result_text)
-        else:
-            result = result_text
+        print(f"AI raw response: {result}")
+        
+        # If result is a string, parse it as JSON
+        if isinstance(result, str):
+            result = json.loads(result)
         
         # Validate required fields
         if not isinstance(result, dict):
@@ -161,10 +184,20 @@ Extract the following information and respond ONLY with valid JSON (no other tex
         if 'item_type' not in result or 'title' not in result or 'date' not in result:
             raise ValueError(f"Missing required fields in response: {result}")
         
-        # Apply defaults
+        # Apply defaults and convert empty strings to None
         if result['item_type'] == 'event':
-            if result.get('duration_minutes') is None:
+            if result.get('duration_minutes') is None or result.get('duration_minutes') == 0:
                 result['duration_minutes'] = 60
+            if result.get('category') is None or result.get('category') == '':
+                result['category'] = 'Events'
+        
+        # Convert empty strings to None for optional fields
+        if result.get('time') == '':
+            result['time'] = None
+        if result.get('location') == '':
+            result['location'] = None
+        if result.get('description') == '':
+            result['description'] = None
         
         return result
         
