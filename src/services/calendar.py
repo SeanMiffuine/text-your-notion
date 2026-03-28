@@ -10,7 +10,7 @@ from utils.datetime_utils import (
     add_minutes,
     format_datetime_for_google,
     get_date_range_today,
-    get_date_range_this_week
+    get_date_range_next_7_days
 )
 
 
@@ -188,14 +188,14 @@ class GoogleCalendarClient:
         start_dt, end_dt = get_date_range_today()
         return await self._get_events_all_calendars(start_dt, end_dt)
     
-    async def get_events_this_week(self):
+    async def get_events_next_7_days(self):
         """
-        Get all events for this week (today through Sunday) from all calendars.
+        Get all events for the next 7 days from all calendars.
         
         Returns:
             list: List of event objects
         """
-        start_dt, end_dt = get_date_range_this_week()
+        start_dt, end_dt = get_date_range_next_7_days()
         return await self._get_events_all_calendars(start_dt, end_dt)
     async def delete_event(self, event_id, calendar_id="primary"):
         """

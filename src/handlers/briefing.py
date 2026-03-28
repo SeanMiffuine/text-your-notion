@@ -3,7 +3,7 @@ Morning briefing handler for generating daily summaries.
 """
 from services.calendar import GoogleCalendarClient
 from services.notion import NotionClient
-from utils.datetime_utils import get_current_time, get_date_range_today
+from utils.datetime_utils import get_current_time, get_date_range_today, get_date_range_next_7_days
 
 
 async def generate_briefing(env):
@@ -36,9 +36,9 @@ async def generate_briefing(env):
         events_today = await calendar_client.get_events_today()
         print(f"✅ Found {len(events_today)} events today")
         
-        print("📅 Fetching this week's events...")
-        events_week_all = await calendar_client.get_events_this_week()
-        print(f"✅ Found {len(events_week_all)} events this week (including today)")
+        print("📅 Fetching next 7 days events...")
+        events_week_all = await calendar_client.get_events_next_7_days()
+        print(f"✅ Found {len(events_week_all)} events in next 7 days (including today)")
         
         # Filter out today's events from this week's events to avoid duplicates
         from datetime import datetime
@@ -79,15 +79,15 @@ async def generate_briefing(env):
                 # If we can't parse, include it to be safe
                 events_week.append(event)
         
-        print(f"✅ Filtered to {len(events_week)} events this week (excluding today)")
+        print(f"✅ Filtered to {len(events_week)} events in next 7 days (excluding today)")
         
         print("☑️ Fetching today's todos...")
         todos_today = await notion_client.get_todos_today()
         print(f"✅ Found {len(todos_today)} todos today")
         
-        print("☑️ Fetching this week's todos...")
-        todos_week_all = await notion_client.get_todos_this_week()
-        print(f"✅ Found {len(todos_week_all)} todos this week (including today)")
+        print("☑️ Fetching next 7 days todos...")
+        todos_week_all = await notion_client.get_todos_next_7_days()
+        print(f"✅ Found {len(todos_week_all)} todos in next 7 days (including today)")
         
         # Filter out today's todos from this week's todos
         todos_week = []
@@ -107,7 +107,7 @@ async def generate_briefing(env):
             else:
                 todos_week.append(todo)  # Include if no date
         
-        print(f"✅ Filtered to {len(todos_week)} todos this week (excluding today)")
+        print(f"✅ Filtered to {len(todos_week)} todos in next 7 days (excluding today)")
         
         # Get current time
         current_time = get_current_time()
@@ -234,7 +234,7 @@ FORMATTING RULES:
    - List each event with: name, time, and description (if available)
    - Format: "📅 [Event Name] at [Time]" followed by description on next line if present
    - Example: "📅 Team Meeting at 2:00 PM\n   Discuss Q2 roadmap"
-3. For THIS WEEK'S EVENTS section:
+3. For THIS WEEK'S EVENTS section (next 7 days, excluding today):
    - Only show: event name and day of week
    - Format: "📅 [Event Name] - [Day]"
    - Example: "📅 Dentist Appointment - Friday"
@@ -304,6 +304,36 @@ def _format_list(items, item_type, detailed=None):
         return "None"
     
     lines = []
+    
+    # For week events, sort by actual date first
+    if item_type == 'event' and detailed is False:
+        from datetime import datetime, timezone
+        
+        # Sort events by actual datetime
+        def get_event_datetime(event):
+            start_datetime = event.get('start_datetime', '')
+            start_date = event.get('start_date', '')
+            
+            if start_datetime:
+                try:
+                    dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
+                    return dt
+                except:
+                    pass
+            elif start_date:
+                try:
+                    dt = datetime.fromisoformat(start_date)
+                    # Make timezone-aware if naive
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
+                except:
+                    pass
+            # Return a timezone-aware min datetime
+            return datetime.min.replace(tzinfo=timezone.utc)
+        
+        items = sorted(items, key=get_event_datetime)
+    
     for item in items:
         if item_type == 'event':
             if detailed is True:
@@ -420,8 +450,35 @@ def _format_simple_briefing(context):
     
     # This week's events - summary
     if context['events_week']:
-        briefing += "THIS WEEK:\n"
-        for event in context['events_week']:
+        from datetime import datetime, timezone
+        
+        # Sort events by actual datetime
+        def get_event_datetime(event):
+            start_datetime = event.get('start_datetime', '')
+            start_date = event.get('start_date', '')
+            
+            if start_datetime:
+                try:
+                    dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
+                    return dt
+                except:
+                    pass
+            elif start_date:
+                try:
+                    dt = datetime.fromisoformat(start_date)
+                    # Make timezone-aware if naive
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
+                except:
+                    pass
+            # Return a timezone-aware min datetime
+            return datetime.min.replace(tzinfo=timezone.utc)
+        
+        sorted_events = sorted(context['events_week'], key=get_event_datetime)
+        
+        briefing += "NEXT 7 DAYS:\n"
+        for event in sorted_events:
             title = event['title']
             
             # Parse day
@@ -447,7 +504,7 @@ def _format_simple_briefing(context):
     
     # This week's todos
     if context['todos_week']:
-        briefing += "\nTODOS THIS WEEK:\n"
+        briefing += "\nTODOS NEXT 7 DAYS:\n"
         for todo in context['todos_week']:
             briefing += f"☑️ {todo['title']} (due: {todo['due_date']})\n"
     

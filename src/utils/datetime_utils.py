@@ -134,22 +134,18 @@ def get_date_range_today():
     return start, end
 
 
-def get_date_range_this_week():
+def get_date_range_next_7_days():
     """
-    Get start and end datetime for this week (today through Sunday).
+    Get start and end datetime for the next 7 days (today through 6 days from now).
     
     Returns:
-        tuple: (start_datetime, end_datetime) for this week
+        tuple: (start_datetime, end_datetime) for next 7 days
     """
     now = get_current_time()
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    # Calculate days until Sunday (6 = Sunday in weekday())
-    days_until_sunday = (6 - now.weekday()) % 7
-    if days_until_sunday == 0:
-        days_until_sunday = 7  # If today is Sunday, go to next Sunday
-    
-    end = start + timedelta(days=days_until_sunday)
+    # 7 days from now
+    end = start + timedelta(days=7)
     end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
     
     return start, end

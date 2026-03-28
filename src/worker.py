@@ -56,10 +56,10 @@ class NotionAssistantBot:
             if not text:
                 return Response.json({"ok": True}, status=200)
             
-            # Check for /briefing command
-            if text.strip().lower() == "/briefing":
+            # Check for /brief command
+            if text.strip().lower() == "/brief":
                 from handlers.briefing import generate_briefing
-                print("📨 /briefing command received")
+                print("📨 /brief command received")
                 response_text = await generate_briefing(self.env)
             else:
                 # Process message and get response

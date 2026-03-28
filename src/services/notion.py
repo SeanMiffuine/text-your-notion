@@ -2,7 +2,7 @@
 Notion API client for creating and querying todo items.
 """
 import httpx
-from utils.datetime_utils import get_date_range_today, get_date_range_this_week
+from utils.datetime_utils import get_date_range_today, get_date_range_next_7_days
 
 
 class NotionClient:
@@ -117,20 +117,20 @@ class NotionClient:
             print(f"Error getting todos today: {e}")
             return []
     
-    async def get_todos_this_week(self):
+    async def get_todos_next_7_days(self):
         """
-        Get all todos due this week (today through Sunday).
+        Get all todos due in the next 7 days.
         
         Returns:
             list: List of todo page objects
         """
         try:
-            start_dt, end_dt = get_date_range_this_week()
+            start_dt, end_dt = get_date_range_next_7_days()
             start_date = start_dt.strftime("%Y-%m-%d")
             end_date = end_dt.strftime("%Y-%m-%d")
             return await self._query_todos(start_date, end_date)
         except Exception as e:
-            print(f"Error getting todos this week: {e}")
+            print(f"Error getting todos next 7 days: {e}")
             return []
     async def delete_todo(self, page_id):
         """
