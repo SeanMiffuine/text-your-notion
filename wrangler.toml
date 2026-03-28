@@ -7,9 +7,9 @@ compatibility_flags = ["python_workers"]
 binding = "AI"
 
 [triggers]
-# 9 AM PST = 16:00 UTC (PST is UTC-8)
-# Note: During PDT (daylight saving), 9 AM PDT = 16:00 UTC (PDT is UTC-7)
-crons = ["0 16 * * *"]
+# 7 AM PST = 14:00 UTC (PST is UTC-8)
+# Note: During PDT (daylight saving), 7 AM PDT = 14:00 UTC (PDT is UTC-7)
+crons = ["0 14 * * *"]
 
 # Environment variables (set via: wrangler secret put <KEY>)
 # TELEGRAM_BOT_TOKEN

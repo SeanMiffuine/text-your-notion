@@ -180,23 +180,23 @@ class GoogleCalendarClient:
     
     async def get_events_today(self):
         """
-        Get all events for today.
+        Get all events for today from all calendars.
         
         Returns:
             list: List of event objects
         """
         start_dt, end_dt = get_date_range_today()
-        return await self._get_events(start_dt, end_dt)
+        return await self._get_events_all_calendars(start_dt, end_dt)
     
     async def get_events_this_week(self):
         """
-        Get all events for this week (today through Sunday).
+        Get all events for this week (today through Sunday) from all calendars.
         
         Returns:
             list: List of event objects
         """
         start_dt, end_dt = get_date_range_this_week()
-        return await self._get_events(start_dt, end_dt)
+        return await self._get_events_all_calendars(start_dt, end_dt)
     async def delete_event(self, event_id, calendar_id="primary"):
         """
         Delete a calendar event.
@@ -247,11 +247,53 @@ class GoogleCalendarClient:
             print(f"Error deleting calendar event: {e}")
             raise Exception(f"Failed to delete calendar event: {str(e)}")
     
-    async def _get_events(self, start_dt, end_dt):
+    async def _get_events_all_calendars(self, start_dt, end_dt):
         """
-        Get events within a date range.
+        Get events from all calendars within a date range.
         
         Args:
+            start_dt: Start datetime
+            end_dt: End datetime
+            
+        Returns:
+            list: Combined list of event objects from all calendars
+        """
+        all_events = []
+        
+        # Get calendar IDs to query
+        calendar_ids = ["primary"]
+        
+        # Add category calendars if configured
+        if self.env:
+            for category, env_var_name in self.CATEGORY_CALENDARS.items():
+                if hasattr(self.env, env_var_name):
+                    calendar_id = getattr(self.env, env_var_name)
+                    if calendar_id:
+                        calendar_ids.append(calendar_id)
+                        print(f"Including calendar: {category} ({calendar_id})")
+        
+        # Query each calendar
+        for calendar_id in calendar_ids:
+            try:
+                events = await self._get_events(calendar_id, start_dt, end_dt)
+                all_events.extend(events)
+                print(f"✅ Fetched {len(events)} events from calendar: {calendar_id}")
+            except Exception as e:
+                print(f"⚠️ Error fetching from calendar {calendar_id}: {e}")
+                continue
+        
+        # Sort all events by start time
+        all_events.sort(key=lambda e: e.get("start", {}).get("dateTime", ""))
+        
+        print(f"📅 Total events fetched: {len(all_events)}")
+        return all_events
+    
+    async def _get_events(self, calendar_id, start_dt, end_dt):
+        """
+        Get events from a specific calendar within a date range.
+        
+        Args:
+            calendar_id: Calendar ID to query
             start_dt: Start datetime
             end_dt: End datetime
             
@@ -272,19 +314,21 @@ class GoogleCalendarClient:
             
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    f"{self.BASE_URL}/calendars/primary/events",
+                    f"{self.BASE_URL}/calendars/{calendar_id}/events",
                     headers=headers,
                     params=params,
                     timeout=30.0
                 )
                 
                 if response.status_code != 200:
+                    error_text = response.text
+                    print(f"❌ Google Calendar API error for {calendar_id}: {response.status_code} - {error_text}")
                     raise Exception(f"Google Calendar API error: {response.status_code}")
                 
                 data = response.json()
                 return data.get("items", [])
                 
         except Exception as e:
-            print(f"Error fetching calendar events: {e}")
-            return []
+            print(f"Error fetching calendar events from {calendar_id}: {e}")
+            raise
 

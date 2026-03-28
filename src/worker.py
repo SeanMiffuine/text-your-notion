@@ -56,8 +56,14 @@ class NotionAssistantBot:
             if not text:
                 return Response.json({"ok": True}, status=200)
             
-            # Process message and get response
-            response_text = await handle_message(self.env, chat_id, text)
+            # Check for /briefing command
+            if text.strip().lower() == "/briefing":
+                from handlers.briefing import generate_briefing
+                print("📨 /briefing command received")
+                response_text = await generate_briefing(self.env)
+            else:
+                # Process message and get response
+                response_text = await handle_message(self.env, chat_id, text)
             
             # Send response to Telegram
             await self._send_telegram_message(chat_id, response_text)

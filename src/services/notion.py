@@ -108,10 +108,14 @@ class NotionClient:
         Returns:
             list: List of todo page objects
         """
-        start_dt, end_dt = get_date_range_today()
-        start_date = start_dt.strftime("%Y-%m-%d")
-        end_date = end_dt.strftime("%Y-%m-%d")
-        return await self._query_todos(start_date, end_date)
+        try:
+            start_dt, end_dt = get_date_range_today()
+            start_date = start_dt.strftime("%Y-%m-%d")
+            end_date = end_dt.strftime("%Y-%m-%d")
+            return await self._query_todos(start_date, end_date)
+        except Exception as e:
+            print(f"Error getting todos today: {e}")
+            return []
     
     async def get_todos_this_week(self):
         """
@@ -120,10 +124,14 @@ class NotionClient:
         Returns:
             list: List of todo page objects
         """
-        start_dt, end_dt = get_date_range_this_week()
-        start_date = start_dt.strftime("%Y-%m-%d")
-        end_date = end_dt.strftime("%Y-%m-%d")
-        return await self._query_todos(start_date, end_date)
+        try:
+            start_dt, end_dt = get_date_range_this_week()
+            start_date = start_dt.strftime("%Y-%m-%d")
+            end_date = end_dt.strftime("%Y-%m-%d")
+            return await self._query_todos(start_date, end_date)
+        except Exception as e:
+            print(f"Error getting todos this week: {e}")
+            return []
     async def delete_todo(self, page_id):
         """
         Delete (archive) a todo item in Notion.
@@ -193,6 +201,8 @@ class NotionClient:
                 ]
             }
             
+            print(f"🔍 Querying Notion todos from {start_date} to {end_date}")
+            
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.BASE_URL}/databases/{self.database_id}/query",
@@ -202,11 +212,15 @@ class NotionClient:
                 )
                 
                 if response.status_code != 200:
+                    error_text = response.text
+                    print(f"❌ Notion API error: {response.status_code} - {error_text}")
                     raise Exception(f"Notion API error: {response.status_code}")
                 
                 data = response.json()
-                return data.get("results", [])
+                results = data.get("results", [])
+                print(f"✅ Notion query returned {len(results)} todos")
+                return results
                 
         except Exception as e:
             print(f"Error querying Notion todos: {e}")
-            return []
+            raise

@@ -180,12 +180,31 @@ wrangler secret put GOOGLE_CALENDAR_CLIENT_SECRET
 # Notion
 wrangler secret put NOTION_API_KEY
 wrangler secret put NOTION_DATABASE_ID
+
+# Optional: Google Calendar IDs for category calendars
+# If you have multiple calendars, add their IDs here
+# The briefing will query all configured calendars
+wrangler secret put GOOGLE_CALENDAR_ID_ACADEMIC
+wrangler secret put GOOGLE_CALENDAR_ID_BIRTHDAYS
+wrangler secret put GOOGLE_CALENDAR_ID_ERRANDS
+wrangler secret put GOOGLE_CALENDAR_ID_EVENTS
+wrangler secret put GOOGLE_CALENDAR_ID_FINANCE
+wrangler secret put GOOGLE_CALENDAR_ID_HOLIDAYS
+wrangler secret put GOOGLE_CALENDAR_ID_OCCUPATION
+wrangler secret put GOOGLE_CALENDAR_ID_PASSION
 ```
+
+**Finding Calendar IDs:**
+1. Go to Google Calendar settings
+2. Select a calendar from the left sidebar
+3. Scroll to "Integrate calendar"
+4. Copy the "Calendar ID" (looks like: abc123@group.calendar.google.com)
 
 **Important:** 
 - `.dev.vars` = Local testing only (git-ignored, never committed)
 - `wrangler secret put` = Production deployment (stored securely in Cloudflare)
 - You need BOTH for a complete setup
+- Calendar IDs are optional - if not set, only the primary calendar will be queried
 
 ### 7. Deploy (on your local machine)
 
@@ -235,9 +254,20 @@ The bot will:
 - Create a Notion todo
 - Send confirmation
 
+### Manual Briefing
+
+Trigger a briefing on demand:
+
+- Send `/briefing` to get an immediate daily summary
+
+This is useful for:
+- Testing your setup
+- Debugging empty briefings
+- Getting updates outside the scheduled time
+
 ### Morning Briefing
 
-Every day at 9 AM PST, you'll receive:
+Every day at 7 AM PST, you'll receive:
 - Events scheduled for today
 - Todos due today
 - Events scheduled this week
@@ -301,8 +331,21 @@ Edit `wrangler.toml`:
 
 ```toml
 [triggers]
-crons = ["0 16 * * *"]  # 9 AM PST = 16:00 UTC
+crons = ["0 14 * * *"]  # 7 AM PST = 14:00 UTC
 ```
+
+### Debug Empty Briefings
+
+If your briefings are empty:
+
+1. Send `/briefing` command to test manually
+2. Check logs: `wrangler tail`
+3. Verify calendar IDs are set (see step 6 in setup)
+4. Confirm events exist in your calendars
+5. Check Notion database property names match:
+   - "Name" (title)
+   - "Due Date" (date)
+   - "Status" (status)
 
 ### Modify AI Parsing
 
