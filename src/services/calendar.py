@@ -28,6 +28,7 @@ class GoogleCalendarClient:
         "Errands": "GOOGLE_CALENDAR_ID_ERRANDS",
         "Events": "GOOGLE_CALENDAR_ID_EVENTS",
         "Finance": "GOOGLE_CALENDAR_ID_FINANCE",
+        "Holidays": "GOOGLE_CALENDAR_ID_HOLIDAYS",
         "Occupation": "GOOGLE_CALENDAR_ID_OCCUPATION",
         "Passion": "GOOGLE_CALENDAR_ID_PASSION"
     }
@@ -196,6 +197,55 @@ class GoogleCalendarClient:
         """
         start_dt, end_dt = get_date_range_this_week()
         return await self._get_events(start_dt, end_dt)
+    async def delete_event(self, event_id, calendar_id="primary"):
+        """
+        Delete a calendar event.
+
+        Args:
+            event_id: Google Calendar event ID
+            calendar_id: Calendar ID (default: "primary")
+
+        Returns:
+            bool: True if deletion successful
+
+        Raises:
+            Exception: If event deletion fails
+        """
+        try:
+            # Get headers (with token refresh if needed)
+            headers = await self._get_headers()
+
+            # Use JS fetch API directly to avoid httpx issues with empty responses
+            from js import fetch
+            from pyodide.ffi import to_js
+            from js import Object
+
+            url = f"{self.BASE_URL}/calendars/{calendar_id}/events/{event_id}"
+
+            # Build fetch options
+            options = to_js({
+                "method": "DELETE",
+                "headers": headers
+            }, dict_converter=Object.fromEntries)
+
+            print(f"Deleting event {event_id} from calendar {calendar_id}")
+
+            # Make the request
+            response = await fetch(url, options)
+            status = response.status
+
+            print(f"Delete event response status: {status}")
+
+            # Check status code (DELETE returns 204 No Content on success)
+            if status not in [200, 204]:
+                raise Exception(f"Google Calendar API error: {status}")
+
+            print(f"✅ Successfully deleted event {event_id}")
+            return True
+
+        except Exception as e:
+            print(f"Error deleting calendar event: {e}")
+            raise Exception(f"Failed to delete calendar event: {str(e)}")
     
     async def _get_events(self, start_dt, end_dt):
         """

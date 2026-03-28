@@ -10,6 +10,10 @@ from utils.datetime_utils import (
     format_time_friendly
 )
 
+# Track last created item for quick cancellation
+# Format: {"type": "event"|"todo", "id": "...", "title": "...", "calendar_id": "..."}
+last_created_item = None
+
 
 async def handle_message(env, chat_id, message_text):
     """
@@ -23,7 +27,17 @@ async def handle_message(env, chat_id, message_text):
     Returns:
         str: Response message to send back to user
     """
+    global last_created_item
+    
     try:
+        # Check for cancellation keywords
+        cancel_keywords = ["cancel", "delete", "undo", "nevermind", "never mind"]
+        message_lower = message_text.lower().strip()
+        
+        if any(keyword in message_lower for keyword in cancel_keywords):
+            return await handle_cancellation(env)
+        
+        # Continue with normal event/todo creation
         # Get current time in Vancouver timezone
         current_time = get_current_time()
         
@@ -59,6 +73,13 @@ async def handle_message(env, chat_id, message_text):
                 env=env
             )
             
+            # Determine which calendar to use
+            calendar_id = "primary"
+            if category and env:
+                env_var_name = GoogleCalendarClient.CATEGORY_CALENDARS.get(category)
+                if env_var_name and hasattr(env, env_var_name):
+                    calendar_id = getattr(env, env_var_name)
+            
             # Create event
             event = await calendar_client.create_event(
                 title=title,
@@ -69,6 +90,14 @@ async def handle_message(env, chat_id, message_text):
                 description=description,
                 category=category
             )
+            
+            # Store for quick cancellation
+            last_created_item = {
+                "type": "event",
+                "id": event["id"],
+                "title": title,
+                "calendar_id": calendar_id
+            }
             
             # Format confirmation message
             date_friendly = format_date_friendly(date_str)
@@ -108,6 +137,13 @@ async def handle_message(env, chat_id, message_text):
                 description=description
             )
             
+            # Store for quick cancellation
+            last_created_item = {
+                "type": "todo",
+                "id": page["id"],
+                "title": title
+            }
+            
             # Format confirmation message
             date_friendly = format_date_friendly(date_str)
             
@@ -125,3 +161,65 @@ async def handle_message(env, chat_id, message_text):
         error_msg = str(e)
         print(f"Error handling message: {error_msg}")
         return "❌ Couldn't parse that. Please rephrase."
+
+
+
+async def handle_cancellation(env):
+    """
+    Handle cancellation of the last created item.
+    
+    Args:
+        env: Cloudflare Worker environment
+        
+    Returns:
+        str: Response message confirming cancellation or error
+    """
+    global last_created_item
+    
+    if not last_created_item:
+        return "Nothing to cancel. Create an event or todo first."
+    
+    try:
+        item_type = last_created_item["type"]
+        item_id = last_created_item["id"]
+        item_title = last_created_item["title"]
+        
+        if item_type == "event":
+            # Delete calendar event
+            calendar_id = last_created_item.get("calendar_id", "primary")
+            print(f"Attempting to delete event {item_id} from calendar {calendar_id}")
+            
+            calendar_client = GoogleCalendarClient(
+                access_token=env.GOOGLE_CALENDAR_ACCESS_TOKEN,
+                refresh_token=env.GOOGLE_CALENDAR_REFRESH_TOKEN,
+                client_id=env.GOOGLE_CALENDAR_CLIENT_ID,
+                client_secret=env.GOOGLE_CALENDAR_CLIENT_SECRET,
+                env=env
+            )
+            
+            result = await calendar_client.delete_event(item_id, calendar_id)
+            print(f"Delete event result: {result}")
+            
+            # Clear stored item
+            last_created_item = None
+            
+            return f"🗑️ Cancelled event: {item_title}"
+            
+        else:  # todo
+            # Delete Notion todo
+            notion_client = NotionClient(
+                env.NOTION_API_KEY,
+                env.NOTION_DATABASE_ID
+            )
+            await notion_client.delete_todo(item_id)
+            
+            # Clear stored item
+            last_created_item = None
+            
+            return f"🗑️ Cancelled todo: {item_title}"
+            
+    except Exception as e:
+        print(f"Error cancelling item: {e}")
+        # Clear the item anyway since it might be invalid
+        last_created_item = None
+        return f"❌ Couldn't cancel: {str(e)}"

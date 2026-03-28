@@ -124,6 +124,37 @@ class NotionClient:
         start_date = start_dt.strftime("%Y-%m-%d")
         end_date = end_dt.strftime("%Y-%m-%d")
         return await self._query_todos(start_date, end_date)
+    async def delete_todo(self, page_id):
+        """
+        Delete (archive) a todo item in Notion.
+
+        Args:
+            page_id: Notion page ID
+
+        Returns:
+            bool: True if deletion successful
+
+        Raises:
+            Exception: If todo deletion fails
+        """
+        try:
+            # Notion doesn't have true delete, so we archive the page
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{self.BASE_URL}/pages/{page_id}",
+                    headers={**self.headers, "Accept-Encoding": "identity"},
+                    json={"archived": True},
+                    timeout=30.0
+                )
+
+                if response.status_code != 200:
+                    raise Exception(f"Notion API error: {response.status_code} - {response.text}")
+
+                return True
+
+        except Exception as e:
+            print(f"Error deleting Notion todo: {e}")
+            raise Exception(f"Failed to delete todo: {str(e)}")
     
     async def _query_todos(self, start_date, end_date):
         """
