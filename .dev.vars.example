@@ -22,4 +22,6 @@ GOOGLE_CALENDAR_ID_PASSION=your_passion_calendar_id@group.calendar.google.com
 
 # Notion API
 NOTION_API_KEY=your_notion_integration_token_here
+# Database ID format: 32 chars with dashes (e.g., 2071b5a7-fcb8-81a6-9117-f93bd09ba0b9)
+# Get it from your database URL: notion.so/workspace/[DATABASE_ID]?v=[view_id]
 NOTION_DATABASE_ID=your_notion_database_id_here

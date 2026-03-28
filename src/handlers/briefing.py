@@ -81,33 +81,10 @@ async def generate_briefing(env):
         
         print(f"✅ Filtered to {len(events_week)} events in next 7 days (excluding today)")
         
-        print("☑️ Fetching today's todos...")
-        todos_today = await notion_client.get_todos_today()
-        print(f"✅ Found {len(todos_today)} todos today")
-        
-        print("☑️ Fetching next 7 days todos...")
-        todos_week_all = await notion_client.get_todos_next_7_days()
-        print(f"✅ Found {len(todos_week_all)} todos in next 7 days (including today)")
-        
-        # Filter out today's todos from this week's todos
-        todos_week = []
-        for todo in todos_week_all:
-            props = todo.get("properties", {})
-            due_date = props.get("Due Date", {}).get("date", {}).get("start", "")
-            
-            # Parse due date
-            if due_date:
-                try:
-                    todo_dt = datetime.fromisoformat(due_date)
-                    # Only include if not today
-                    if todo_dt.date() != today_start.date():
-                        todos_week.append(todo)
-                except:
-                    todos_week.append(todo)  # Include if can't parse
-            else:
-                todos_week.append(todo)  # Include if no date
-        
-        print(f"✅ Filtered to {len(todos_week)} todos in next 7 days (excluding today)")
+        print("☑️ Fetching todos by status...")
+        todos_by_status = await notion_client.get_todos_by_status(["To do", "In progress", "In review"])
+        total_todos = sum(len(items) for items in todos_by_status.values())
+        print(f"✅ Found {total_todos} todos across all statuses")
         
         # Get current time
         current_time = get_current_time()
@@ -117,8 +94,10 @@ async def generate_briefing(env):
             "current_date": current_time.strftime("%A, %B %d, %Y"),
             "events_today": _format_events_for_llm(events_today),
             "events_week": _format_events_for_llm(events_week),
-            "todos_today": _format_todos_for_llm(todos_today),
-            "todos_week": _format_todos_for_llm(todos_week)
+            "todos_by_status": {
+                status: _format_todos_for_llm(items) 
+                for status, items in todos_by_status.items()
+            }
         }
         
         print("🤖 Formatting briefing with LLM...")
@@ -182,21 +161,40 @@ def _format_todos_for_llm(todos):
     for todo in todos:
         props = todo.get("properties", {})
         
-        # Extract title
-        title_prop = props.get("Name", {}).get("title", [])
-        title = title_prop[0].get("text", {}).get("content", "Untitled") if title_prop else "Untitled"
+        # Debug: log available properties for first todo
+        if not formatted:
+            print(f"🔍 Available todo properties: {list(props.keys())}")
         
-        # Extract due date
-        due_date = props.get("Due Date", {}).get("date", {}).get("start", "")
+        # Try different possible title property names
+        title = "Untitled"
+        for prop_name in ["Name", "Title", "Task", "name", "title"]:
+            if prop_name in props:
+                title_prop = props[prop_name].get("title", [])
+                if title_prop:
+                    title = title_prop[0].get("text", {}).get("content", "Untitled")
+                    break
         
         # Extract status
-        status = props.get("Status", {}).get("status", {}).get("name", "Not started")
+        status = props.get("Status", {}).get("status", {}).get("name", "")
+        
+        # Extract priority if exists, map to colored circle emoji
+        priority_prop = props.get("Priority", {})
+        priority_name = priority_prop.get("select", {}).get("name", "") if priority_prop.get("select") else ""
+        priority_dot = {"Low Prio": "🟩", "Medium Prio": "🟧", "High Prio": "🟥"}.get(priority_name, "☐")
+        
+        # Extract description if exists
+        description_prop = props.get("Description", {}).get("rich_text", [])
+        description = description_prop[0].get("text", {}).get("content", "") if description_prop else ""
         
         item = {
             "title": title,
-            "due_date": due_date,
-            "status": status
+            "status": status,
+            "priority_dot": priority_dot
         }
+        
+        if description:
+            item["description"] = description
+        
         formatted.append(item)
     return formatted
 
@@ -222,11 +220,10 @@ TODAY'S EVENTS (show full details):
 THIS WEEK'S EVENTS (show name and day only):
 {_format_list(context['events_week'], 'event', detailed=False)}
 
-TODAY'S TODOS:
-{_format_list(context['todos_today'], 'todo')}
-
-THIS WEEK'S TODOS:
-{_format_list(context['todos_week'], 'todo')}
+TODOS BY STATUS:
+To do: {_format_list(context['todos_by_status'].get('To do', []), 'todo')}
+In progress: {_format_list(context['todos_by_status'].get('In progress', []), 'todo')}
+In review: {_format_list(context['todos_by_status'].get('In review', []), 'todo')}
 
 FORMATTING RULES:
 1. Start with a friendly greeting: "🌅 Good morning!"
@@ -238,13 +235,17 @@ FORMATTING RULES:
    - Only show: event name and day of week
    - Format: "📅 [Event Name] - [Day]"
    - Example: "📅 Dentist Appointment - Friday"
-4. For TODOS:
-   - Show name and due date
-   - Format: "☑️ [Todo Name] (due: [Date])"
-5. Keep it concise and easy to scan
-6. If a section is empty, skip it or say "Nothing scheduled"
-7. Do NOT use markdown headers (no ##)
-8. Use simple text formatting with emojis
+4. After calendar events, add a few blank lines (\\n\\n\\n)
+5. For TODOS BY STATUS:
+   - Group by status: "To do", "In progress", "In review"
+   - Format each: "[priority_dot] [Todo Name]" where priority_dot is the colored circle from the data
+   - Add description on next line with indent if present: "   📝 [description]"
+   - Example: "🔴 Fix critical bug\n   📝 Update authentication logic"
+   - If a status has no items, skip that section
+6. Keep it concise and easy to scan
+7. If a section is empty, skip it or say "Nothing scheduled"
+8. Do NOT use markdown headers (no ##)
+9. Use simple text formatting with emojis
 
 Generate the briefing now:"""
 
@@ -438,14 +439,7 @@ def _format_simple_briefing(context):
             
             briefing += "\n"
     
-    # Today's todos
-    if context['todos_today']:
-        briefing += "TODAY'S TODOS:\n"
-        for todo in context['todos_today']:
-            briefing += f"☑️ {todo['title']}\n"
-        briefing += "\n"
-    
-    if not context['events_today'] and not context['todos_today']:
+    if not context['events_today']:
         briefing += "Nothing scheduled for today!\n\n"
     
     # This week's events - summary
@@ -502,10 +496,33 @@ def _format_simple_briefing(context):
             
             briefing += f"📅 {title} - {day_str}\n"
     
-    # This week's todos
-    if context['todos_week']:
-        briefing += "\nTODOS NEXT 7 DAYS:\n"
-        for todo in context['todos_week']:
-            briefing += f"☑️ {todo['title']} (due: {todo['due_date']})\n"
+    # Todos by status
+    briefing += "\n\n\n"  # Add spacing after calendar
+    
+    todos_by_status = context.get('todos_by_status', {})
+    
+    if todos_by_status.get('To do'):
+        briefing += "TO DO:\n"
+        for todo in todos_by_status['To do']:
+            briefing += f"{todo.get('priority_dot', '⚫')} {todo['title']}\n"
+            if todo.get('description'):
+                briefing += f"   📝 {todo['description']}\n"
+        briefing += "\n"
+    
+    if todos_by_status.get('In progress'):
+        briefing += "IN PROGRESS:\n"
+        for todo in todos_by_status['In progress']:
+            briefing += f"{todo.get('priority_dot', '⚫')} {todo['title']}\n"
+            if todo.get('description'):
+                briefing += f"   📝 {todo['description']}\n"
+        briefing += "\n"
+    
+    if todos_by_status.get('In review'):
+        briefing += "IN REVIEW:\n"
+        for todo in todos_by_status['In review']:
+            briefing += f"{todo.get('priority_dot', '⚫')} {todo['title']}\n"
+            if todo.get('description'):
+                briefing += f"   📝 {todo['description']}\n"
+        briefing += "\n"
     
     return briefing

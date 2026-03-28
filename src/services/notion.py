@@ -101,37 +101,22 @@ class NotionClient:
             print(f"Error creating Notion todo: {e}")
             raise Exception(f"Failed to create todo: {str(e)}")
     
-    async def get_todos_today(self):
+    async def get_todos_by_status(self, status_names):
         """
-        Get all todos due today.
+        Get all todos with specific statuses.
+        
+        Args:
+            status_names: List of status names to filter by (e.g., ["To do", "In progress", "In review"])
         
         Returns:
-            list: List of todo page objects
+            dict: Dictionary mapping status names to lists of todo page objects
         """
         try:
-            start_dt, end_dt = get_date_range_today()
-            start_date = start_dt.strftime("%Y-%m-%d")
-            end_date = end_dt.strftime("%Y-%m-%d")
-            return await self._query_todos(start_date, end_date)
+            print(f"☑️ Fetching todos with statuses: {', '.join(status_names)}")
+            return await self._query_todos_by_status(status_names)
         except Exception as e:
-            print(f"Error getting todos today: {e}")
-            return []
-    
-    async def get_todos_next_7_days(self):
-        """
-        Get all todos due in the next 7 days.
-        
-        Returns:
-            list: List of todo page objects
-        """
-        try:
-            start_dt, end_dt = get_date_range_next_7_days()
-            start_date = start_dt.strftime("%Y-%m-%d")
-            end_date = end_dt.strftime("%Y-%m-%d")
-            return await self._query_todos(start_date, end_date)
-        except Exception as e:
-            print(f"Error getting todos next 7 days: {e}")
-            return []
+            print(f"Error getting todos by status: {e}")
+            return {status: [] for status in status_names}
     async def delete_todo(self, page_id):
         """
         Delete (archive) a todo item in Notion.
@@ -164,49 +149,48 @@ class NotionClient:
             print(f"Error deleting Notion todo: {e}")
             raise Exception(f"Failed to delete todo: {str(e)}")
     
-    async def _query_todos(self, start_date, end_date):
+    async def _query_todos_by_status(self, status_names):
         """
-        Query todos within a date range.
+        Query todos by status.
         
         Args:
-            start_date: Start date (YYYY-MM-DD)
-            end_date: End date (YYYY-MM-DD)
+            status_names: List of status names to filter by
             
         Returns:
-            list: List of todo page objects
+            dict: Dictionary mapping status names to lists of todo page objects
         """
         try:
-            query = {
-                "filter": {
-                    "and": [
+            # Build filter for multiple statuses
+            if len(status_names) == 1:
+                filter_query = {
+                    "property": "Status",
+                    "status": {
+                        "equals": status_names[0]
+                    }
+                }
+            else:
+                filter_query = {
+                    "or": [
                         {
-                            "property": "Due Date",
-                            "date": {
-                                "on_or_after": start_date
-                            }
-                        },
-                        {
-                            "property": "Due Date",
-                            "date": {
-                                "on_or_before": end_date
+                            "property": "Status",
+                            "status": {
+                                "equals": status
                             }
                         }
+                        for status in status_names
                     ]
-                },
-                "sorts": [
-                    {
-                        "property": "Due Date",
-                        "direction": "ascending"
-                    }
-                ]
+                }
+            
+            query = {
+                "filter": filter_query
             }
             
-            print(f"🔍 Querying Notion todos from {start_date} to {end_date}")
+            print(f"🔍 Querying Notion todos by status")
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.BASE_URL}/databases/{self.database_id}/query",
-                    headers={**self.headers, "Accept-Encoding": "identity"},  # Disable compression
+                    headers={**self.headers, "Accept-Encoding": "identity"},
                     json=query,
                     timeout=30.0
                 )
@@ -219,7 +203,18 @@ class NotionClient:
                 data = response.json()
                 results = data.get("results", [])
                 print(f"✅ Notion query returned {len(results)} todos")
-                return results
+                
+                # Group by status
+                grouped = {status: [] for status in status_names}
+                for todo in results:
+                    status = todo.get("properties", {}).get("Status", {}).get("status", {}).get("name", "")
+                    if status in grouped:
+                        grouped[status].append(todo)
+                
+                for status, items in grouped.items():
+                    print(f"  📋 {status}: {len(items)} items")
+                
+                return grouped
                 
         except Exception as e:
             print(f"Error querying Notion todos: {e}")
